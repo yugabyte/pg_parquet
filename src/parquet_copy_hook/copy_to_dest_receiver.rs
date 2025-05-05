@@ -5,7 +5,7 @@ use std::{
 
 use pg_sys::{
     get_typlenbyval, slot_getallattrs, toast_raw_datum_size, AllocSetContextCreateExtended,
-    AsPgCStr, BlessTupleDesc, CommandDest, CurrentMemoryContext, Datum, DestReceiver,
+    AsPgCStr, BlessTupleDesc, CommandDest, YbCurrentMemoryContext, Datum, DestReceiver,
     HeapTupleData, List, MemoryContext, MemoryContextAllocZero, MemoryContextDelete,
     MemoryContextReset, TupleDesc, TupleTableSlot, ALLOCSET_DEFAULT_INITSIZE,
     ALLOCSET_DEFAULT_MAXSIZE, ALLOCSET_DEFAULT_MINSIZE, VARHDRSZ,
@@ -174,7 +174,7 @@ impl CopyToParquetDestReceiver {
 }
 
 #[pg_guard]
-pub(crate) extern "C" fn copy_startup(
+pub(crate) extern "C-unwind" fn copy_startup(
     dest: *mut DestReceiver,
     _operation: i32,
     tupledesc: TupleDesc,
@@ -241,7 +241,7 @@ pub(crate) extern "C" fn copy_startup(
 }
 
 #[pg_guard]
-pub(crate) extern "C" fn copy_receive(slot: *mut TupleTableSlot, dest: *mut DestReceiver) -> bool {
+pub(crate) extern "C-unwind" fn copy_receive(slot: *mut TupleTableSlot, dest: *mut DestReceiver) -> bool {
     let parquet_dest = unsafe {
         (dest as *mut CopyToParquetDestReceiver)
             .as_mut()
@@ -293,7 +293,7 @@ pub(crate) extern "C" fn copy_receive(slot: *mut TupleTableSlot, dest: *mut Dest
 }
 
 #[pg_guard]
-pub(crate) extern "C" fn copy_shutdown(dest: *mut DestReceiver) {
+pub(crate) extern "C-unwind" fn copy_shutdown(dest: *mut DestReceiver) {
     let parquet_dest = unsafe {
         (dest as *mut CopyToParquetDestReceiver)
             .as_mut()
@@ -310,7 +310,7 @@ pub(crate) extern "C" fn copy_shutdown(dest: *mut DestReceiver) {
 }
 
 #[pg_guard]
-pub(crate) extern "C" fn copy_destroy(_dest: *mut DestReceiver) {}
+pub(crate) extern "C-unwind" fn copy_destroy(_dest: *mut DestReceiver) {}
 
 fn tuple_column_sizes(tuple_datums: &[Option<Datum>], tupledesc: &PgTupleDesc) -> Vec<i32> {
     let mut column_sizes = vec![];
@@ -354,14 +354,14 @@ fn tuple_column_sizes(tuple_datums: &[Option<Datum>], tupledesc: &PgTupleDesc) -
 // used as a destination receiver for COPY TO command. All arguments, except "uri", are optional
 // and have default values if not provided.
 #[pg_guard]
-pub(crate) fn create_copy_to_parquet_dest_receiver(
+pub(crate) extern "C-unwind" fn create_copy_to_parquet_dest_receiver(
     uri: *const c_char,
     is_to_stdout: bool,
     options: CopyToParquetOptions,
 ) -> *mut CopyToParquetDestReceiver {
     let row_group_memory_context = unsafe {
         AllocSetContextCreateExtended(
-            CurrentMemoryContext as _,
+            YbCurrentMemoryContext as _,
             "pg_parquet Row Group Memory Context".as_pg_cstr(),
             ALLOCSET_DEFAULT_MINSIZE as _,
             ALLOCSET_DEFAULT_INITSIZE as _,
@@ -371,7 +371,7 @@ pub(crate) fn create_copy_to_parquet_dest_receiver(
 
     let copy_memory_context = unsafe {
         AllocSetContextCreateExtended(
-            CurrentMemoryContext as _,
+            YbCurrentMemoryContext as _,
             "pg_parquet Copy Memory Context".as_pg_cstr(),
             ALLOCSET_DEFAULT_MINSIZE as _,
             ALLOCSET_DEFAULT_INITSIZE as _,
